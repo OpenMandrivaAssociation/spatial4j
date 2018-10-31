@@ -1,7 +1,7 @@
 %{?_javapackages_macros:%_javapackages_macros}
 Name:          spatial4j
 Version:       0.4.1
-Release:       2.1
+Release:       2.2
 Summary:       A Geospatial Library for Java
 Group:		Development/Java
 License:       ASL 2.0
