@@ -13,6 +13,8 @@ BuildRequires:	python
 BuildRequires:	maven
 BuildRequires:	java-current-devel
 BuildRequires:	mvn(org.noggit:noggit)
+# noggit's POM parents this, and a parent POM is not a Requires of the jar.
+BuildRequires:	mvn(org.sonatype.oss:oss-parent:pom::)
 BuildSystem:	maven
 BuildOption(install):	--file-name spatial4j
 
