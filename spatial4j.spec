@@ -1,5 +1,5 @@
 Name:		spatial4j
-Version:	0.5
+Version:	0.8
 Release:	1
 Summary:	Geospatial shapes and distance calculations for Java
 Group:		Development/Java
@@ -9,59 +9,84 @@ Source0:	https://github.com/locationtech/spatial4j/archive/refs/tags/spatial4j-%
 
 BuildArch:	noarch
 BuildRequires:	python
-# Literal, so the first rpmbuild -bs records them before sysjar is installed.
-BuildRequires:	maven
 BuildRequires:	java-current-devel
+BuildRequires:	sysjar
 BuildRequires:	mvn(org.noggit:noggit)
-# noggit's POM parents this, and a parent POM is not a Requires of the jar.
-BuildRequires:	mvn(org.sonatype.oss:oss-parent:pom::)
-BuildSystem:	maven
-BuildOption(install):	--file-name spatial4j
-
-Obsoletes:	%{name}-javadoc < %{version}-%{release}
 
 %description
 Spatial4j provides geospatial shapes, distance calculations, and
-readers and writers for those shapes. 0.5 adds WKT writing, GeoJSON,
-and the Polyshape format, and it requires Java 7 upstream. This build
-uses the system noggit jar for GeoJSON and raises the compiler source
-level to 1.8. JTS shapes are left out because JTS is not published.
-Tests are skipped.
+readers and writers for those shapes. 0.8 lives under
+org.locationtech.spatial4j (was com.spatial4j). This build uses the
+system noggit jar for GeoJSON. Optional JTS and Jackson modules are
+left out because JTS is not published.
 
 %prep
 %autosetup -n spatial4j-spatial4j-%{version}
 rm -rf src/test
+find . \( -name '*.jar' -o -name '*.class' -o -name '*.so' -o -name '*.node' -o -name '*.wasm' \) -delete
 python - <<'PY'
-import shutil
-from pathlib import Path
+import pathlib
+import re
 
-src = Path("src/main/java")
+src = pathlib.Path("src/main/java")
 for rel in (
-    "com/spatial4j/core/context/jts",
-    "com/spatial4j/core/io/jts",
-    "com/spatial4j/core/shape/jts",
+    "org/locationtech/spatial4j/context/jts",
+    "org/locationtech/spatial4j/io/jts",
+    "org/locationtech/spatial4j/shape/jts",
+    "org/locationtech/spatial4j/io/jackson",
 ):
     path = src / rel
     if path.is_dir():
+        import shutil
         shutil.rmtree(path)
     else:
         raise SystemExit("missing " + rel)
-java_files = list(src.rglob("*.java"))
-if len(java_files) != 47:
+
+# Unused JTS import left in the non-JTS PolyshapeReader.
+poly = src / "org/locationtech/spatial4j/io/PolyshapeReader.java"
+text = poly.read_text(encoding="utf-8")
+text2 = re.sub(r"^import org\.locationtech\.jts\.geom\.LinearRing;\n", "", text, count=1, flags=re.M)
+if text2 == text:
+    raise SystemExit("LinearRing import not found")
+poly.write_text(text2, encoding="utf-8")
+
+java_files = sorted(src.rglob("*.java"))
+if len(java_files) != 50:
     raise SystemExit("java files " + str(len(java_files)))
-if list(Path(".").rglob("*.jar")):
+if list(pathlib.Path(".").rglob("*.jar")):
     raise SystemExit("prebuilt jar remains")
 for path in java_files:
-    text = path.read_text(encoding="utf-8")
-    if "com.vividsolutions" in text:
-        raise SystemExit("jts import remains in " + str(path))
+    t = path.read_text(encoding="utf-8")
+    if "locationtech.jts" in t or "vividsolutions" in t or "fasterxml" in t:
+        raise SystemExit("forbidden import in " + str(path))
+PY
 
-Path("pom.xml").write_text("""<?xml version="1.0" encoding="UTF-8"?>
+%build
+set -eo pipefail
+export JAVA_HOME=%{_jvmdir}/java-openjdk
+export PATH="$JAVA_HOME/bin:$PATH"
+
+CP="%{_javadir}/noggit.jar"
+test -s "$CP"
+mkdir -p out
+find src/main/java -name '*.java' > out.list
+test "$(wc -l < out.list)" -eq 50
+javac --release 8 -encoding UTF-8 -Xlint:-options -proc:none \
+	-cp "$CP" -d out @out.list
+javap -verbose -cp out org.locationtech.spatial4j.context.SpatialContext \
+	| grep -F -q 'major version: 52'
+
+jar cf spatial4j.jar -C out .
+jar i spatial4j.jar
+jar tf spatial4j.jar | grep -E '\.(java|jar|so|node|wasm)$' && exit 1 || true
+
+cat > spatial4j.pom << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>com.spatial4j</groupId>
+  <groupId>org.locationtech.spatial4j</groupId>
   <artifactId>spatial4j</artifactId>
-  <version>%{version}</version>
+  <version>0.8</version>
   <packaging>jar</packaging>
   <name>Spatial4j</name>
   <description>Geospatial shapes. GeoJSON uses the system noggit jar.</description>
@@ -77,54 +102,49 @@ Path("pom.xml").write_text("""<?xml version="1.0" encoding="UTF-8"?>
       <groupId>org.noggit</groupId>
       <artifactId>noggit</artifactId>
       <version>0.8</version>
+      <optional>true</optional>
     </dependency>
   </dependencies>
-  <properties>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.source>1.8</maven.compiler.source>
-    <maven.compiler.target>1.8</maven.compiler.target>
-  </properties>
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.12.1</version>
-        <configuration>
-          <source>1.8</source>
-          <target>1.8</target>
-        </configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-jar-plugin</artifactId>
-        <version>3.3.0</version>
-      </plugin>
-    </plugins>
-  </build>
 </project>
-""", encoding="utf-8")
-pom = Path("pom.xml").read_text(encoding="utf-8")
-for needle in (
-    "<artifactId>spatial4j</artifactId>",
-    "<artifactId>noggit</artifactId>",
-    "<version>0.8</version>",
-    "<version>%{version}</version>",
-    "<source>1.8</source>",
-    "<target>1.8</target>",
-):
-    if needle not in pom:
-        raise SystemExit("pom missing " + needle)
-for needle in ("junit", "oss-parent", "vividsolutions", "<source>1.7</source>", "SNAPSHOT", "<release>", "slf4j"):
-    if needle in pom:
-        raise SystemExit("pom still contains " + needle)
-PY
+EOF
 
-%build -a
-java --module-path target/spatial4j-%{version}.jar --describe-module spatial4j > module-describe.txt
-# A versioned jar prints "name@version ... automatic", not "name automatic".
-grep -q '^spatial4j' module-describe.txt || { cat module-describe.txt; exit 1; }
-grep -q ' automatic$' module-describe.txt || { cat module-describe.txt; exit 1; }
+%install
+set -eo pipefail
+sysjar install --buildroot %{buildroot} \
+	--artifact spatial4j.pom:spatial4j.jar \
+	--file-name spatial4j \
+	--filelist .mfiles
+
+%check
+set -eo pipefail
+export JAVA_HOME=%{_jvmdir}/java-openjdk
+export PATH="$JAVA_HOME/bin:$PATH"
+JAR=%{buildroot}%{_javadir}/spatial4j.jar
+test -s "$JAR"
+mkdir -p check
+cat > check/Check.java << 'EOF'
+import org.locationtech.spatial4j.context.SpatialContext;
+import org.locationtech.spatial4j.shape.Point;
+import org.locationtech.spatial4j.shape.Shape;
+public class Check {
+	public static void main(String[] args) throws Exception {
+		SpatialContext ctx = SpatialContext.GEO;
+		Point p = ctx.makePoint(-122.4194, 37.7749);
+		Shape box = ctx.makeRectangle(-123, -122, 37, 38);
+		Shape wkt = ctx.readShapeFromWkt("POINT(-122.4194 37.7749)");
+		if (!box.relate(p).intersects()) {
+			throw new IllegalStateException("point outside box");
+		}
+		System.out.println("spatial4j_ok " + p.getX() + " " + box.getArea(ctx));
+	}
+}
+EOF
+javac --release 8 -encoding UTF-8 -Xlint:-options -proc:none \
+	-cp "$JAR" -d check check/Check.java
+java -cp "check:$JAR" Check > check/out.txt
+cat check/out.txt
+grep -F -q 'spatial4j_ok -122.4194' check/out.txt
 
 %files -f .mfiles
-%doc LICENSE.txt README.md CHANGES.md
+%license asl-v20.txt
+%doc README.md CHANGES.md
