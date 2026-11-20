@@ -1,5 +1,5 @@
-sources:
-  spatial4j-0.8.tar.gz: 91264ec566f4b0dd8e60e0878f2a85af44bb67
 removed_sources:
   "spatial4j-0.4.1.tar.gz": 93e8182dfd652003c9fb72e1804d82e7d7bac954
   spatial4j-0.5.tar.gz: cafc55d608c6b6a5c7317502131fb7ab699e26b7
+sources:
+  spatial4j-0.8.tar.gz: 91264ec566f4b0dd8d0e60e0878f2a85af44bb67
