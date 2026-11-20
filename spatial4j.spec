@@ -102,7 +102,6 @@ cat > spatial4j.pom << 'EOF'
       <groupId>org.noggit</groupId>
       <artifactId>noggit</artifactId>
       <version>0.8</version>
-      <optional>true</optional>
     </dependency>
   </dependencies>
 </project>
